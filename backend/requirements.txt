@@ -1,0 +1,3 @@
+pydantic-ai-slim[openai, logfire, graph]
+uv
+pydantic-settings
