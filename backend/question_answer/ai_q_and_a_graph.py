@@ -1,11 +1,12 @@
 from __future__ import annotations as _annotations
 
 from dataclasses import dataclass, field
+from typing import Annotated
 
 from pydantic_ai import Agent
 from pydantic_ai.format_as_xml import format_as_xml
 from pydantic_ai.messages import ModelMessage
-from pydantic_graph import BaseNode, End, Graph, GraphRunContext
+from pydantic_graph import BaseNode, Edge, End, Graph, GraphRunContext
 
 ask_agent = Agent("openai:gpt-4o", result_type=str)
 
@@ -19,7 +20,13 @@ class QuestionState:
 
 @dataclass
 class Ask(BaseNode[QuestionState]):
-    async def run(self, ctx: GraphRunContext[QuestionState]) -> Answer:
+    """Generate question using GPI-4o."""
+
+    docstring_notes = True
+
+    async def run(
+        self, ctx: GraphRunContext[QuestionState]
+    ) -> Annotated[Answer, Edge(label="Ask the question")]:
         result = await ask_agent.run(
             "Ask a simple question with a single correct answer.",
             message_history=ctx.state.ask_agent_messages,
@@ -56,7 +63,9 @@ evaluate_agent = Agent(
 class Evaluate(BaseNode[QuestionState]):
     answer: str
 
-    async def run(self, ctx: GraphRunContext[QuestionState]) -> End[str] | Reprimand:
+    async def run(
+        self, ctx: GraphRunContext[QuestionState]
+    ) -> Annotated[End[str], Edge(label="success")] | Reprimand:
         assert ctx.state.question is not None
         result = await evaluate_agent.run(
             format_as_xml({"question": ctx.state.question, "answer": self.answer}),
@@ -81,3 +90,4 @@ class Reprimand(BaseNode[QuestionState]):
 
 
 question_graph = Graph(nodes=(Ask, Answer, Evaluate, Reprimand))
+question_graph.mermaid_save("image.png", highlighted_nodes=[Answer])
