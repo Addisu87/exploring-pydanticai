@@ -1,3 +1,4 @@
 pydantic-ai-slim[openai, logfire, graph]
-uv
+uvicorn
 pydantic-settings
+gradio
