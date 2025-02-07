@@ -14,7 +14,10 @@ except ImportError as e:
         "Please install gradio with `pip install gradio`. You must use python>3.10."
     ) from e
 
-TOOL_TO_DISPLAY_NAME = {"get_lat_lng": "Geocoding API", "get_weather": "WeatherAPI"}
+TOOL_TO_DISPLAY_NAME = {
+    "get_lat_lng": "Geocoding API",
+    "get_weather": "WeatherAPI",
+}
 
 client = AsyncClient()
 weather_api_key = settings.WEATHER_API_KEY
@@ -44,7 +47,7 @@ async def stream_from_agent(prompt: str, chatbot: list[dict], past_messages: lis
                         else json.dumps(call.args.args_dict)  # type: ignore
                     )
                     metadata = {
-                        "title": f"🛠️ Using {TOOL_TO_DISPLAY_NAME[call.tool_name]}"
+                        "title": f"🛠️ Using {TOOL_TO_DISPLAY_NAME[call.tool_name]}",
                     }
                     if call.tool_call_id is not None:
                         metadata["id"] = {call.tool_call_id}  # type: ignore
@@ -54,7 +57,6 @@ async def stream_from_agent(prompt: str, chatbot: list[dict], past_messages: lis
                         "content": "Parameters: " + call_args,
                         "metadata": metadata,
                     }
-
                     chatbot.append(gr_message)
                 if isinstance(call, ToolReturnPart):
                     for gr_message in chatbot:

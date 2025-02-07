@@ -1,8 +1,28 @@
 from dataclasses import dataclass
 
-from bank_database import DatabaseConn
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
+
+
+class DatabaseConn:
+    """
+    This is a fake database for example purposes.
+
+    In reality, you'd be connecting to an external database
+    (e.g. PostgreSQL) to get information about customers.
+    """
+
+    @classmethod
+    async def customer_name(cls, *, id: int) -> str | None:
+        if id == 123:
+            return "John"
+
+    @classmethod
+    async def customer_balance(cls, *, id: int, include_pending: bool) -> float:
+        if id == 123:
+            return 123.45
+        else:
+            raise ValueError("Customer not found")
 
 
 # SupportDependencies is used to pass data, connections, and logic into that will be needed when running system prompt and tool functions.
@@ -51,14 +71,15 @@ async def add_customer_name(ctx: RunContext[SupportDependencies]) -> str:
 @support_agent.tool
 async def customer_balance(
     ctx: RunContext[SupportDependencies], include_pending: bool
-) -> float:
+) -> str:
     """Returns the customer's current account balance."""
     # The docstring of a tool is also passed to the LLM as the description of the tool.
     # Parameter descriptions are extracted from the docstring and added to the parameter schema sent to the LLM.
     balance = await ctx.deps.db.customer_balance(
-        id=ctx.deps.customer_id, include_pending=include_pending
+        id=ctx.deps.customer_id,
+        include_pending=include_pending,
     )
-    return balance
+    return f"${balance:.2f}"
 
 
 ...  # In a real use case, you'd add more tools and a longer system prompt

@@ -1,7 +1,8 @@
-pydantic-ai-slim[openai, logfire, graph]
+pydantic-ai-slim[openai, graph]
 uvicorn
 pydantic-settings
 gradio
 devtools
+logfire
 rich
 python-multipart

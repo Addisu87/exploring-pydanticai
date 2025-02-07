@@ -6,7 +6,7 @@ from typing import Any
 
 import logfire
 from core.config import settings
-from devtools import debug  # type: ignore
+from devtools import debug
 from httpx import AsyncClient
 from pydantic_ai import Agent, ModelRetry, RunContext
 
