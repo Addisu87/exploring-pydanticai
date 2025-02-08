@@ -3,13 +3,24 @@ from dataclasses import dataclass
 from typing import Literal
 
 import logfire
+from core.config import settings
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, ModelRetry, RunContext
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.usage import Usage, UsageLimits
 from rich.prompt import Prompt
 
 # 'if-token-present' means nothing will be sent (and the example will work) if you don't have logfire configured
 logfire.configure(send_to_logfire="if-token-present")
+logfire.instrument_pydantic()
+
+
+model = OpenAIModel(
+    "deepseek-chat",
+    api_key=settings.DEEPSEEK_API_KEY,
+    base_url=settings.BASE_URL,
+)
 
 
 # **Flight Data Models**
@@ -37,14 +48,14 @@ class Deps:
 
 # **1. Flight Extraction Agent**
 extraction_agent = Agent(
-    "openai:gpt-4o",
+    model,
     result_type=list[FlightDetails],
     system_prompt="Extract all the flight details from the given text.",
 )
 
 # **2. Flight Search Agent**
 search_agent = Agent[Deps, FlightDetails | NoFlightFound](
-    "openai:gpt-4o",
+    model,
     result_type=FlightDetails | NoFlightFound,  # type: ignore
     retries=2,
     system_prompt="Find the cheapest flight for the user based on extracted flights.",
@@ -54,11 +65,16 @@ search_agent = Agent[Deps, FlightDetails | NoFlightFound](
 @search_agent.tool
 async def get_flights(ctx: RunContext[Deps]) -> list[FlightDetails]:
     """Retrieve flights already extracted instead of re-calling LLM."""
-    return ctx.deps.available_flights
+    # We pass the usage to the search agent to requests within this agent are counted
+    result = await extraction_agent.run(ctx.deps.available_flights, usage=ctx.usage)
+    logfire.info("found {flight_count} flights", flight_count=len(result.data))
+    return result.data
 
 
 @search_agent.result_validator
-async def validate_result(ctx: RunContext[Deps], result: FlightDetails | NoFlightFound):
+async def validate_result(
+    ctx: RunContext[Deps], result: FlightDetails | NoFlightFound
+) -> FlightDetails | NoFlightFound:
     """Ensure the selected flight matches the requested criteria."""
     if isinstance(result, NoFlightFound):
         return result
@@ -84,11 +100,12 @@ class Failed(BaseModel):
 
 
 seat_preference_agent = Agent[None, SeatPreference | Failed](
-    "openai:gpt-4o",
+    model,
     result_type=SeatPreference | Failed,  # type: ignore
     system_prompt=(
         "Extract the user's seat preference. "
         "Seats A and F are window seats. "
+        "Row 1 is the front row."
         "Row 1, 14, and 20 have extra leg room."
     ),
 )
@@ -147,15 +164,19 @@ flights_web_page = """
 - Date: January 10, 2025
 """
 
-usage_limits = UsageLimits(request_limit=10)
+# restrict how many requests this app can make to the LLM
+usage_limits = UsageLimits(request_limit=15)
 
 
 async def find_flight(deps: Deps, usage: Usage) -> FlightDetails | None:
     """Handles flight search and validation logic."""
+    message_history: list[ModelMessage] | None = None
+
     result = await search_agent.run(
         f"Find me a flight from {deps.req_origin} to {deps.req_destination} on {deps.req_date}",
         deps=deps,
         usage=usage,
+        message_history=message_history,
         usage_limits=usage_limits,
     )
 
@@ -170,33 +191,39 @@ async def find_seat(usage: Usage) -> SeatPreference:
     """Handles seat selection with limited retries."""
     max_attempts = 3
     attempts = 0
+    message_history: list[ModelMessage] | None = None
 
     while attempts < max_attempts:
         answer = Prompt.ask("What seat would you like? (e.g., 12A)")
 
         result = await seat_preference_agent.run(
-            answer, usage=usage, usage_limits=usage_limits
+            answer,
+            usage=usage,
+            usage_limits=usage_limits,
+            message_history=message_history,
         )
 
         if isinstance(result.data, SeatPreference):
             return result.data
-
-        print("Invalid seat selection. Try again.")
-        attempts += 1
+        else:
+            print("Invalid seat selection. Try again.")
+            message_history = result.all_messages()
+            attempts += 1
 
     print("Max retries reached. Assigning default seat 10C.")
     return SeatPreference(row=10, seat="C")
 
 
-async def buy_tickets(flight: FlightDetails, seat: SeatPreference):
+async def buy_tickets(flight_details: FlightDetails, seat: SeatPreference):
     """Mock function to simulate purchasing a flight."""
     print(
-        f"Purchasing flight {flight.flight_number} with seat {seat.row}{seat.seat}..."
+        f"Purchasing flight {flight_details.flight_number} with seat {seat.row}{seat.seat}..."
     )
 
 
 async def main():
     """Main flow for flight booking."""
+
     usage = Usage()
 
     # **Extract flights only once**
