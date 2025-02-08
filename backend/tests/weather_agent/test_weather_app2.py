@@ -3,7 +3,7 @@
 import re
 
 import pytest
-from db.fake_database import DatabaseConn
+from backend.db.base import DatabaseConn
 from pydantic_ai import models
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel

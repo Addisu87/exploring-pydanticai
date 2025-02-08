@@ -2,7 +2,7 @@
 from datetime import timezone
 
 import pytest
-from db.fake_database import DatabaseConn
+from backend.db.base import DatabaseConn
 from dirty_equals import IsNow
 from pydantic_ai import capture_run_messages, models
 from pydantic_ai.messages import (

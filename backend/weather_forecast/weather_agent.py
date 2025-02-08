@@ -87,7 +87,7 @@ async def get_weather(ctx: RunContext[Deps], lat: float, lng: float) -> dict[str
     }
     with logfire.span("calling weather API", params=params) as span:
         r = await ctx.deps.client.get(
-            "http://api.tomorrow.io/v4/weahter/realtime", params=params
+            "http://api.tomorrow.io/v4/weather/realtime", params=params
         )
         r.raise_for_status()
         data = r.json()

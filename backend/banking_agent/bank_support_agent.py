@@ -1,28 +1,8 @@
 from dataclasses import dataclass
 
+from db.base import DatabaseConn
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
-
-
-class DatabaseConn:
-    """
-    This is a fake database for example purposes.
-
-    In reality, you'd be connecting to an external database
-    (e.g. PostgreSQL) to get information about customers.
-    """
-
-    @classmethod
-    async def customer_name(cls, *, id: int) -> str | None:
-        if id == 123:
-            return "John"
-
-    @classmethod
-    async def customer_balance(cls, *, id: int, include_pending: bool) -> float:
-        if id == 123:
-            return 123.45
-        else:
-            raise ValueError("Customer not found")
 
 
 # SupportDependencies is used to pass data, connections, and logic into that will be needed when running system prompt and tool functions.

@@ -1,4 +1,4 @@
-from fake_database import DatabaseConn
+from db.base import DatabaseConn
 from pydantic import BaseModel
 from pydantic_ai import Agent, ModelRetry, RunContext
 
@@ -23,7 +23,7 @@ def get_user_by_name(ctx: RunContext[DatabaseConn], name: str) -> int:
     # > John
     # > John Doe
 
-    user_id = ctx.deps.users.get(name=name)
+    user_id = ctx.deps.users.get(name=name) # type: ignore
     if user_id is None:
         raise ModelRetry(
             f"No user found with name {name!r}, remember to provide their full name"
