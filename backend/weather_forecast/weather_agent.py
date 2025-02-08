@@ -1,6 +1,5 @@
 from __future__ import annotations as _annotations
 
-import asyncio
 from dataclasses import dataclass
 from typing import Any
 
@@ -9,13 +8,20 @@ from core.config import settings
 from devtools import debug
 from httpx import AsyncClient
 from pydantic_ai import Agent, ModelRetry, RunContext
+from pydantic_ai.models.openai import OpenAIModel
 
 # 'if-token-present' means nothing will be sent (and the example will work)
 # if you don't have logfire configured
 
 logfire.configure(send_to_logfire="if-token-present")
-logfire.instrument_asyncpg()
+logfire.instrument_pydantic()
 
+
+model = OpenAIModel(
+    "deepseek-chat",
+    api_key=settings.DEEPSEEK_API_KEY,
+    base_url=settings.BASE_URL,
+)
 
 
 @dataclass
@@ -26,7 +32,7 @@ class Deps:
 
 
 weather_agent = Agent(
-    "openai:gpt-4o",
+    model,
     # 'Be concise, reply with one sentence.' is enough for some models (like openai) to use
     # the below tools appropriately, but others like anthropic and gemini require a bit more direction.
     system_prompt=(
@@ -145,7 +151,3 @@ async def main():
         debug(result)
 
         print("Response:", result.data)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

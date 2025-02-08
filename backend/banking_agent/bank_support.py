@@ -70,7 +70,4 @@ async def main():
         # > Did you hear about the tootpaste scandal? They called it Colgage.
 
 
-if __name__ == "__main__":
-    import asyncio
 
-    asyncio.run(main())

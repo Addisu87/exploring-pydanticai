@@ -53,5 +53,7 @@ async def main():
         # > Berlin
 
 
-if __name__ == "__main___":
+if __name__ == "__main__":
+    import asyncio
+
     asyncio.run(main())
