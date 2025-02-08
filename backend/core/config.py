@@ -3,7 +3,7 @@ from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class BaseSettings(BaseSettings):
+class BaseConfig(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
@@ -11,7 +11,7 @@ class BaseSettings(BaseSettings):
     ENV_STATE: str | None = None
 
 
-class Settings(BaseSettings):
+class Settings(BaseConfig):
     DATABASE_URL: str | None = None
     DEEPSEEK_API_KEY: str | None = None
     BASE_URL: str | None = None
@@ -42,4 +42,4 @@ def get_config(env_state: str):
     return configs.get(env_state, DevConfig)()
 
 
-settings = get_config(BaseSettings().ENV_STATE)
+settings = get_config(BaseConfig().ENV_STATE)
