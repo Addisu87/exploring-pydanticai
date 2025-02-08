@@ -1,8 +1,21 @@
 from dataclasses import dataclass
 
+import logfire
+from core.config import settings
 from db.base import DatabaseConn
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
+from pydantic_ai.models.openai import OpenAIModel
+
+logfire.configure(send_to_logfire="if-token-present")
+logfire.instrument_pydantic()
+
+
+model = OpenAIModel(
+    "deepseek-chat",
+    api_key=settings.DEEPSEEK_API_KEY,
+    base_url=settings.BASE_URL,
+)
 
 
 # SupportDependencies is used to pass data, connections, and logic into that will be needed when running system prompt and tool functions.
@@ -24,7 +37,7 @@ class SupportResult(BaseModel):
 # Agents are generic in the type of dependencies they accept and the type of result they return.
 # In this case, the support agent has type `Agent[SupportDependencies, SupportResult]`.
 support_agent = Agent(
-    "openai:gpt-4o",
+    model,
     deps_type=SupportDependencies,
     # The response from the agent will, be guaranteed to be a SupportResult,
     # if validation fails the agent is prompted to try again.

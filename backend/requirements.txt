@@ -6,3 +6,4 @@ devtools
 logfire
 rich
 python-multipart
+openai

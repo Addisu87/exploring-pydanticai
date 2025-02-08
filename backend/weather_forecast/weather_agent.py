@@ -14,6 +14,8 @@ from pydantic_ai import Agent, ModelRetry, RunContext
 # if you don't have logfire configured
 
 logfire.configure(send_to_logfire="if-token-present")
+logfire.instrument_asyncpg()
+
 
 
 @dataclass
