@@ -1,18 +1,10 @@
-# Programmatic agent handoff - refers to the scenario where multiple agents are called in succession.
-
-"""Example of a multi-agent flow where one agent delegates work to another.
-
-In this scenario, a group of agents work together to find flights for a user.
-"""
-
-import asyncio
 import datetime
+from dataclasses import dataclass
 from typing import Literal
 
 import logfire
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, ModelRetry, RunContext
-from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import Usage, UsageLimits
 from rich.prompt import Prompt
 
@@ -20,8 +12,10 @@ from rich.prompt import Prompt
 logfire.configure(send_to_logfire="if-token-present")
 
 
-# Define models for the agents
+# **Flight Data Models**
 class FlightDetails(BaseModel):
+    """Details of the most suitable flight."""
+
     flight_number: str
     price: int
     origin: str = Field(description="Three-letter airport code")
@@ -33,67 +27,53 @@ class NoFlightFound(BaseModel):
     """When no valid flight is found."""
 
 
+@dataclass
 class Deps:
-    web_page_text: str
     req_origin: str
     req_destination: str
     req_date: datetime.date
+    available_flights: list[FlightDetails]
 
 
-# This agent is responsible for controlling the flow of the conversation.
-search_agent = Agent[Deps, FlightDetails | NoFlightFound](
-    "openai:gpt-4o",
-    result_type=FlightDetails | NoFlightFound,  # type: ignore
-    retries=4,
-    system_prompt=(
-        "Your job is to find the cheapest flight for the user on the given date."
-    ),
-)
-
-# This agent is responsible for extracting flight details from web page text.
+# **1. Flight Extraction Agent**
 extraction_agent = Agent(
     "openai:gpt-4o",
     result_type=list[FlightDetails],
     system_prompt="Extract all the flight details from the given text.",
 )
 
+# **2. Flight Search Agent**
+search_agent = Agent[Deps, FlightDetails | NoFlightFound](
+    "openai:gpt-4o",
+    result_type=FlightDetails | NoFlightFound,  # type: ignore
+    retries=2,
+    system_prompt="Find the cheapest flight for the user based on extracted flights.",
+)
+
 
 @search_agent.tool
-async def extract_flights(ctx: RunContext[Deps]) -> list[FlightDetails]:
-    """Get details of all flights"""
-    # We pass the usage to the search agent so requests within this agent are counted
-    result = await extraction_agent.run(ctx.deps.web_page_text, usage=ctx.usage)
-    logfire.info("found {flight_count} flights", flight_count=len(result.data))
-    return result.data
+async def get_flights(ctx: RunContext[Deps]) -> list[FlightDetails]:
+    """Retrieve flights already extracted instead of re-calling LLM."""
+    return ctx.deps.available_flights
 
 
 @search_agent.result_validator
-async def validate_result(
-    ctx: RunContext[Deps], result: FlightDetails | NoFlightFound
-) -> FlightDetails | NoFlightFound:
-    """Procedural validation that the flight meets the constrains."""
+async def validate_result(ctx: RunContext[Deps], result: FlightDetails | NoFlightFound):
+    """Ensure the selected flight matches the requested criteria."""
     if isinstance(result, NoFlightFound):
         return result
 
-    errors: list[str] = []
-    if result.origin != ctx.deps.req_origin:
-        errors.append(
-            f"Flight should have origin {ctx.deps.req_origin}, not {result.origin}"
-        )
+    if (
+        result.origin != ctx.deps.req_origin
+        or result.destination != ctx.deps.req_destination
+        or result.date != ctx.deps.req_date
+    ):
+        raise ModelRetry("Flight does not meet user constraints.")
 
-    if result.destination != ctx.deps.req_destination:
-        errors.append(
-            f"Flight should have destination {ctx.deps.req_destination}, not {result.destination}"
-        )
-    if result.date != ctx.deps.req_date:
-        errors.append(f"Flight should on {ctx.deps.req_date}, not {result.date}")
-
-    if errors:
-        raise ModelRetry("\n".join(errors))
-    else:
-        return result
+    return result
 
 
+# **3. Seat Selection Agent**
 class SeatPreference(BaseModel):
     row: int = Field(ge=1, le=30)
     seat: Literal["A", "B", "C", "D", "E", "F"]
@@ -103,18 +83,18 @@ class Failed(BaseModel):
     """Unable to extract a seat selection."""
 
 
-# This agent is responsible for extracting the user's seat selection
 seat_preference_agent = Agent[None, SeatPreference | Failed](
     "openai:gpt-4o",
     result_type=SeatPreference | Failed,  # type: ignore
     system_prompt=(
         "Extract the user's seat preference. "
         "Seats A and F are window seats. "
-        "Row 1 is the front row and has extra leg room. "
-        "Rows 14, and 20 also have extra led room."
+        "Row 1, 14, and 20 have extra leg room."
     ),
 )
 
+
+# **4. Booking Logic**
 # in reality this would be downloaded from a booking site,
 # potentially using another agent to navigate the site
 flights_web_page = """
@@ -167,86 +147,90 @@ flights_web_page = """
 - Date: January 10, 2025
 """
 
-# restrict how many requests this app can make to the LLM
-usage_limits = UsageLimits(request_limit=15)
+usage_limits = UsageLimits(request_limit=10)
 
 
-async def buy_tickets(flight_details: FlightDetails, seat: SeatPreference):
-    print(f"Purchasing flight {flight_details=!r} {seat=!r}...")
-
-
-# find flight
-async def find_flight(usage: Usage) -> FlightDetails | None:
-    deps = Deps(
-        web_page_text=flights_web_page,
-        req_origin="SFO",
-        req_destination="ANC",
-        req_date=datetime.date(2025, 1, 10),
+async def find_flight(deps: Deps, usage: Usage) -> FlightDetails | None:
+    """Handles flight search and validation logic."""
+    result = await search_agent.run(
+        f"Find me a flight from {deps.req_origin} to {deps.req_destination} on {deps.req_date}",
+        deps=deps,
+        usage=usage,
+        usage_limits=usage_limits,
     )
-    message_history: list[ModelMessage] | None = None
-    # run the agent until a satisfactory flight is found
-    while True:
-        prompt = Prompt.ask(
-            "Find me a flight from {deps.req_origin} to {deps.req_destination} on {deps.req_date}"
-        )
-        result = await search_agent.run(
-            prompt,
-            deps=deps,
-            usage=usage,
-            message_history=message_history,
-            usage_limits=usage_limits,
-        )
-        if isinstance(result.data, NoFlightFound):
-            print("No flight found")
-            break
-        else:
-            flight = result.data
-            print(f"Fight found: {flight}")
-            answer = Prompt.ask(
-                "Do you want to buy this flight, or keep searching? (buy/*search)",
-                choices=["buy", "search", ""],
-                show_choices=False,
-            )
 
-        if answer == "buy":
-            seat = await find_seat(usage)
-            await buy_tickets(flight, seat)
-            break
-        else:
-            message_history = result.all_messages(
-                result_tool_return_content="Please suggest another flight."
-            )
+    if isinstance(result.data, NoFlightFound):
+        print("No suitable flight found.")
+        return None
+
+    return result.data
 
 
 async def find_seat(usage: Usage) -> SeatPreference:
-    message_history: list[ModelMessage] | None = None
-    while True:
-        answer = Prompt.ask("What seat would you like?")
+    """Handles seat selection with limited retries."""
+    max_attempts = 3
+    attempts = 0
+
+    while attempts < max_attempts:
+        answer = Prompt.ask("What seat would you like? (e.g., 12A)")
 
         result = await seat_preference_agent.run(
-            answer,
-            message_history=message_history,
-            usage=usage,
-            usage_limits=usage_limits,
+            answer, usage=usage, usage_limits=usage_limits
         )
+
         if isinstance(result.data, SeatPreference):
             return result.data
-        else:
-            print("Could not understand seat preference. Please try again.")
-            message_history = result.all_messages()
+
+        print("Invalid seat selection. Try again.")
+        attempts += 1
+
+    print("Max retries reached. Assigning default seat 10C.")
+    return SeatPreference(row=10, seat="C")
+
+
+async def buy_tickets(flight: FlightDetails, seat: SeatPreference):
+    """Mock function to simulate purchasing a flight."""
+    print(
+        f"Purchasing flight {flight.flight_number} with seat {seat.row}{seat.seat}..."
+    )
 
 
 async def main():
-    usage: Usage = Usage()
+    """Main flow for flight booking."""
+    usage = Usage()
 
-    opt_flight_details = await find_flight(usage)
-    if opt_flight_details is not None:
-        print(f"Flight found: {opt_flight_details.flight_number}")
-        # > Flight found: AK456
+    # **Extract flights only once**
+    flight_data = await extraction_agent.run(flights_web_page, usage=usage)
+    available_flights = flight_data.data
 
-    seat_preference = await find_seat(usage)
-    print(f"Seat preference: {seat_preference}")
-    # > Seat preference: row=1 seat="A"
+    if not available_flights:
+        print("No flights available.")
+        return
+
+    deps = Deps(
+        req_origin="SFO",
+        req_destination="ANC",
+        req_date=datetime.date(2025, 1, 10),
+        available_flights=available_flights,
+    )
+
+    # **Find the best flight**
+    flight = await find_flight(deps, usage)
+
+    if not flight:
+        return  # No flight found, exit
+
+    print(f"Flight found: {flight}")
+
+    action = Prompt.ask(
+        "Do you want to buy this flight? (yes/no)",
+        choices=["yes", "no"],
+        show_choices=False,
+    )
+
+    if action == "yes":
+        seat = await find_seat(usage)
+        await buy_tickets(flight, seat)
 
 
 if __name__ == "__main__":

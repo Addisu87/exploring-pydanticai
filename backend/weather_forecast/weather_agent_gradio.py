@@ -5,7 +5,7 @@ import json
 from core.config import settings
 from httpx import AsyncClient
 from pydantic_ai.messages import ToolCallPart, ToolReturnPart
-from weather_agent.weather_agent import Deps, weather_agent
+from weather_forecast.weather_agent import Deps, weather_agent
 
 try:
     import gradio as gr

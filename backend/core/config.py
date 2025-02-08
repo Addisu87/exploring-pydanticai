@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class BaseConfig(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-    ENV_STATE = str | None
+    ENV_STATE: str | None = None
 
 
 class Settings(BaseConfig):
@@ -28,10 +28,11 @@ class ProdConfig(Settings):
 class TestConfig(Settings):
     model_config = SettingsConfigDict(env_prefix="TEST_", extra="ignore")
 
-    DATABASE_URL: str = "http://test.com"
+    DATABASE_URL: str = "postgresql://paydanticai:paydanticai@localhost/testdb"
     DB_FORCE_ROLL_BACK: bool = True
 
 
+# lets to avoid reading the dotenv file again and again for each request
 @lru_cache
 def get_config(env_state: str):
     configs = {"dev": DevConfig, "prod": ProdConfig, "test": TestConfig}
