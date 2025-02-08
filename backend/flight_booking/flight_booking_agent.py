@@ -66,9 +66,7 @@ search_agent = Agent[Deps, FlightDetails | NoFlightFound](
 async def get_flights(ctx: RunContext[Deps]) -> list[FlightDetails]:
     """Retrieve flights already extracted instead of re-calling LLM."""
     # We pass the usage to the search agent to requests within this agent are counted
-    result = await extraction_agent.run(ctx.deps.available_flights, usage=ctx.usage)
-    logfire.info("found {flight_count} flights", flight_count=len(result.data))
-    return result.data
+    return ctx.deps.available_flights
 
 
 @search_agent.result_validator
@@ -227,8 +225,9 @@ async def main():
     usage = Usage()
 
     # **Extract flights only once**
-    flight_data = await extraction_agent.run(flights_web_page, usage=usage)
-    available_flights = flight_data.data
+    result = await extraction_agent.run(flights_web_page, usage=usage)
+    logfire.info("found {flight_count} flights", flight_count=len(result.data))
+    available_flights = result.data
 
     if not available_flights:
         print("No flights available.")
