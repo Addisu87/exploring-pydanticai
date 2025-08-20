@@ -1,8 +1,9 @@
 import asyncio
 from datetime import date
 
-from fake_database import DatabaseConn
 from pydantic_ai import Agent, RunContext
+
+from fake_database import DatabaseConn
 from weather_service import WeatherService
 
 weather_agent = Agent(
@@ -14,7 +15,9 @@ weather_agent = Agent(
 
 @weather_agent.tool
 def weather_forecast(
-    ctx: RunContext[WeatherService], location: str, forecast_date: date
+    ctx: RunContext[WeatherService],
+    location: str,
+    forecast_date: date
 ) -> str:
     if forecast_date < date.today():
         return ctx.deps.get_historic_weather(location, forecast_date)
@@ -22,13 +25,16 @@ def weather_forecast(
         return ctx.deps.get_forecast(location, forecast_date)
 
 
-async def run_weather_forecast(user_prompts: list[tuple[str, int]], conn: DatabaseConn):
+async def run_weather_forecast(
+    user_prompts: list[tuple[str, int]],
+    conn: DatabaseConn
+    ):
     """Run weather forecast for a list of user prompts and save."""
     async with WeatherService() as weather_service:
 
         async def run_forecast(prompt: str, user_id: int):
             result = await weather_agent.run(prompt, deps=weather_service)
-            await conn.store_forecast(user_id, result.data)
+            await conn.store_forecast(user_id, result.output)
 
         # run all prompts in parallel
         await asyncio.gather(

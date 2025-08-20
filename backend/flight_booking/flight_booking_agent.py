@@ -1,15 +1,15 @@
 import datetime
 from dataclasses import dataclass
 from typing import Literal
+from rich.prompt import Prompt
 
 import logfire
 from core.config import settings
-from pydantic import BaseModel, Field
 from pydantic_ai import Agent, ModelRetry, RunContext
+from pydantic import BaseModel, Field
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.openai import OpenAIModel
-from pydantic_ai.usage import Usage, UsageLimits
-from rich.prompt import Prompt
+from pydantic_ai.usage import RunUsage, UsageLimits
 
 # 'if-token-present' means nothing will be sent (and the example will work) if you don't have logfire configured
 logfire.configure(send_to_logfire="if-token-present")
@@ -54,7 +54,7 @@ extraction_agent = Agent(
 )
 
 # **2. Flight Search Agent**
-search_agent = Agent[Deps, FlightDetails | NoFlightFound](
+flight_search_agent = Agent[Deps, FlightDetails | NoFlightFound](
     model,
     result_type=FlightDetails | NoFlightFound,  # type: ignore
     retries=2,
@@ -62,14 +62,14 @@ search_agent = Agent[Deps, FlightDetails | NoFlightFound](
 )
 
 
-@search_agent.tool
-async def get_flights(ctx: RunContext[Deps]) -> list[FlightDetails]:
+@flight_search_agent.tool
+async def flight_search(ctx: RunContext[Deps]) -> list[FlightDetails]:
     """Retrieve flights already extracted instead of re-calling LLM."""
     # We pass the usage to the search agent to requests within this agent are counted
     return ctx.deps.available_flights
 
 
-@search_agent.result_validator
+@flight_search_agent.result_validator
 async def validate_result(
     ctx: RunContext[Deps], result: FlightDetails | NoFlightFound
 ) -> FlightDetails | NoFlightFound:
@@ -166,26 +166,31 @@ flights_web_page = """
 usage_limits = UsageLimits(request_limit=15)
 
 
-async def find_flight(deps: Deps, usage: Usage) -> FlightDetails | None:
+async def find_flight(deps: Deps, usage: RunUsage) -> FlightDetails | None:
     """Handles flight search and validation logic."""
     message_history: list[ModelMessage] | None = None
+    
+    for _ in range(3):
+        prompt = Prompt.ask(
+            f"Find me a flight from {deps.req_origin} to {deps.req_destination} on {deps.req_date}",
+        )
+        result = await flight_search_agent.run(
+            prompt,
+            deps=deps,
+            usage=usage,
+            message_history=message_history,
+            usage_limits=usage_limits,
+        )
 
-    result = await search_agent.run(
-        f"Find me a flight from {deps.req_origin} to {deps.req_destination} on {deps.req_date}",
-        deps=deps,
-        usage=usage,
-        message_history=message_history,
-        usage_limits=usage_limits,
-    )
-
-    if isinstance(result.data, NoFlightFound):
-        print("No suitable flight found.")
-        return None
-
-    return result.data
+        if isinstance(result.output, FlightDetails):
+            return result.output
+        else: 
+            message_history = result.all_messages(
+                output_tool_return_content='Please try again.'
+            )
 
 
-async def find_seat(usage: Usage) -> SeatPreference:
+async def find_seat(usage: RunUsage) -> SeatPreference:
     """Handles seat selection with limited retries."""
     max_attempts = 3
     attempts = 0
@@ -196,13 +201,13 @@ async def find_seat(usage: Usage) -> SeatPreference:
 
         result = await seat_preference_agent.run(
             answer,
+            message_history=message_history,
             usage=usage,
             usage_limits=usage_limits,
-            message_history=message_history,
         )
 
-        if isinstance(result.data, SeatPreference):
-            return result.data
+        if isinstance(result.output, SeatPreference):
+            return result.output
         else:
             print("Invalid seat selection. Try again.")
             message_history = result.all_messages()
@@ -222,12 +227,12 @@ async def buy_tickets(flight_details: FlightDetails, seat: SeatPreference):
 async def main():
     """Main flow for flight booking."""
 
-    usage = Usage()
+    usage = RunUsage()
 
     # **Extract flights only once**
     result = await extraction_agent.run(flights_web_page, usage=usage)
     logfire.info("found {flight_count} flights", flight_count=len(result.data))
-    available_flights = result.data
+    available_flights = result.output
 
     if not available_flights:
         print("No flights available.")

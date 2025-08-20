@@ -1,10 +1,11 @@
-# TestModel
+# Unit testing with TestModel
 from datetime import timezone
-
 import pytest
-from backend.db.base import DatabaseConn
-from dirty_equals import IsNow
-from pydantic_ai import capture_run_messages, models
+
+from dirty_equals import IsNow, IsStr
+
+from pydantic_ai import models, capture_run_messages
+from pydantic_ai.models.test import TestModel
 from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
@@ -14,13 +15,16 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
-from pydantic_ai.models.test import TestModel
+
+from pydantic_ai.usage import RequestUsage
+
+from backend.db.base import DatabaseConn
 from weather_agent.weather_app import run_weather_forecast, weather_agent
 
 pytestmark = pytest.mark.asyncio
 models.ALLOW_MODEL_REQUESTS = False
 
-
+# Overriding model via pytest fixtures
 @pytest.fixture
 def override_weather_agent():
     with weather_agent.override(model=TestModel()):
@@ -44,6 +48,7 @@ async def test_forecast(override_weather_agent: None):
             parts=[
                 SystemPromptPart(
                     content="Providing a weather forecast at the locations the user provides.",
+                    timestamp=IsNow(tz=timezone.utc),
                 ),
                 UserPromptPart(
                     content="What will the weather be like in London on 2024-11-28?",
@@ -59,9 +64,13 @@ async def test_forecast(override_weather_agent: None):
                         "location": "a",
                         "forecast_date": "2024-01-01",
                     },
-                    tool_call_id=None,
+                    tool_call_id=IsStr(),
                 )
             ],
+            usage=RequestUsage(
+                input_tokens=71,
+                output_tokens=7,
+            ),
             model_name="test",
             timestamp=IsNow(tz=timezone.utc),
         ),
@@ -70,7 +79,7 @@ async def test_forecast(override_weather_agent: None):
                 ToolReturnPart(
                     tool_name="weather_forecast",
                     content="Sunny with a chance of rain",
-                    tool_call_id=None,
+                    tool_call_id=IsStr(),
                     timestamp=IsNow(tz=timezone.utc),
                 ),
             ],
@@ -81,6 +90,10 @@ async def test_forecast(override_weather_agent: None):
                     content='{"weather_forecast":"Sunny with a chance of rain"}',
                 )
             ],
+            usage=RequestUsage(
+                input_tokens=77,
+                output_tokens=16,
+                ),
             model_name="test",
             timestamp=IsNow(tz=timezone.utc),
         ),

@@ -4,8 +4,11 @@ from pathlib import Path
 
 import logfire
 from ai_q_and_a_graph import Answer, Ask, QuestionState, question_graph
-from devtools import debug  # type: ignore
+from devtools import debug
 from pydantic_graph import End, HistoryStep
+
+# 'if-token-present' means nothing will be sent (and the example will work) if you don't have logfire configured
+logfire.configure(send_to_logfire="if-token-present")
 
 
 async def run_as_continuous():

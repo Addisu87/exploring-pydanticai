@@ -14,7 +14,7 @@ from pydantic_ai.models.openai import OpenAIModel
 # if you don't have logfire configured
 
 logfire.configure(send_to_logfire="if-token-present")
-logfire.instrument_pydantic()
+logfire.instrument_pydantic_ai(event_mode='logs')
 
 
 model = OpenAIModel(

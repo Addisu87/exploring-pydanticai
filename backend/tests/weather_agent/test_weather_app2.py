@@ -3,10 +3,16 @@
 import re
 
 import pytest
-from backend.db.base import DatabaseConn
+
 from pydantic_ai import models
-from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelResponse,
+    TextPart,
+    ToolCallPart
+)
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from backend.db.base import DatabaseConn
 from weather_app import run_weather_forecast, weather_agent
 
 pytestmark = pytest.mark.asyncio
@@ -19,11 +25,8 @@ def call_weather_forecast(
     if len(messages) == 1:
         # first call, call the weather forecast tool
         user_prompt = messages[0].parts[-1]
-
         m = re.search(r"\d{4}-\d{2}-\d{2}", user_prompt.content)
-
         assert m is not None
-
         args = {"location": "London", "forecast_date": m.group()}
         return ModelResponse(parts=[ToolCallPart("weather_forecast", args)])
     else:

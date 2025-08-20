@@ -3,14 +3,10 @@ from __future__ import annotations as _annotations
 from dataclasses import dataclass, field
 from typing import Annotated
 
-import logfire
 from pydantic_ai import Agent
 from pydantic_ai.format_as_xml import format_as_xml
 from pydantic_ai.messages import ModelMessage
 from pydantic_graph import BaseNode, Edge, End, Graph, GraphRunContext
-
-# 'if-token-present' means nothing will be sent (and the example will work) if you don't have logfire configured
-logfire.configure(send_to_logfire="if-token-present")
 
 ask_agent = Agent("openai:gpt-4o", result_type=str)
 
