@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from rich.prompt import Prompt
 
 from pydantic_graph import BaseNode, End, Graph, GraphRunContext
-from rich.prompt import Prompt
 
 
 @dataclass
@@ -22,7 +22,9 @@ class InsertCoin(BaseNode[MachineState]):
 class CoinsInserted(BaseNode[MachineState]):
     amount: float
 
-    async def run(self, ctx: GraphRunContext[MachineState]) -> SelectProduct | Purchase:
+    async def run(
+        self, ctx: GraphRunContext[MachineState]
+    ) -> SelectProduct | Purchase:
         ctx.state.user_balance += self.amount
         if ctx.state.product is not None:
             return Purchase(ctx.state.product)
@@ -77,3 +79,9 @@ async def main():
     await vending_machine_graph.run(InsertCoin(), state=state)
     print(f"purchase successful item={state.product} change={state.user_balance:0.2f}")
     # > purchase successful item=crisps change=0.25
+
+
+if __name__ == "__main__":
+    import asyncio
+
+    asyncio.run(main())

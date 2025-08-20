@@ -12,7 +12,6 @@ weather_agent = Agent(
     system_prompt="Providing a weather forecast at the locations the user provides.",
 )
 
-
 @weather_agent.tool
 def weather_forecast(
     ctx: RunContext[WeatherService],

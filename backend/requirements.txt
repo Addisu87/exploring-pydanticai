@@ -1,8 +1,7 @@
-pydantic-ai-slim[openai, graph, logfire]
+pydantic-ai[openai, graph, logfire]
 uvicorn
 asyncpg
 pydantic-settings
-logfire[asyncpg, httpx]
 gradio
 devtools
 rich
